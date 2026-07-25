@@ -1,0 +1,7 @@
+name: web-ollama-cloud
+version: 1.0.0
+description: "Ollama Cloud web search + content extraction via Ollama's native REST API. Search returns web results; extract fetches page content. Reuses OLLAMA_API_KEY (https://ollama.com/settings/keys)."
+author: rriggs
+kind: backend
+provides_web_providers:
+  - ollama-cloud
