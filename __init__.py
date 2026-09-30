@@ -47,6 +47,25 @@ _FETCH_ENDPOINT = "/api/web_fetch"
 _MAX_RESULTS_CAP = 10  # Ollama API hard cap
 
 
+def _native_base_url(raw: str) -> str:
+    """Normalize a configured Ollama base URL to the NATIVE API root.
+
+    ``OLLAMA_BASE_URL`` is shared with the ollama-cloud MODEL provider, whose
+    OpenAI-compatible base is ``https://ollama.com/v1``. The native endpoints
+    this plugin calls (``/api/web_search``, ``/api/web_fetch``) live at the
+    ORIGIN, not under ``/v1``, so appending them to the shared value produced
+    ``/v1/api/web_search`` -> HTTP 404 on any host configured for chat
+    completions. Strip the OpenAI-compat suffix (and a trailing ``/api``, the
+    same class of mistake) so one variable can serve both consumers.
+    """
+    base = (raw or "").strip().rstrip("/")
+    for suffix in ("/v1", "/api"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)].rstrip("/")
+            break
+    return base or _DEFAULT_BASE_URL
+
+
 def _load_ollama_config() -> Dict[str, Any]:
     """Read ``web.ollama-cloud`` from config.yaml (returns {} on miss)."""
     try:
@@ -62,18 +81,20 @@ def _load_ollama_config() -> Dict[str, Any]:
 
 
 def _resolve_base_url() -> str:
-    """Resolve the Ollama API base URL.
+    """Resolve the Ollama NATIVE API base URL.
 
     Checks ``OLLAMA_BASE_URL`` env var first, then config, then falls back
-    to the default. Strips trailing slash.
+    to the default. The shared variable may carry the model provider's
+    OpenAI-compatible ``/v1`` suffix -- :func:`_native_base_url` strips it so
+    the native ``/api/*`` paths still resolve.
     """
     env_url = get_provider_env("OLLAMA_BASE_URL")
     if env_url:
-        return env_url.rstrip("/")
+        return _native_base_url(env_url)
     cfg = _load_ollama_config()
     cfg_url = cfg.get("base_url")
     if isinstance(cfg_url, str) and cfg_url.strip():
-        return cfg_url.strip().rstrip("/")
+        return _native_base_url(cfg_url)
     return _DEFAULT_BASE_URL
 
 

@@ -297,6 +297,43 @@ class TestConfigResolution:
         monkeypatch.setenv("OLLAMA_BASE_URL", "https://custom.ollama.proxy/")
         assert plugin_module._resolve_base_url() == "https://custom.ollama.proxy"
 
+    def test_env_base_url_strips_openai_compat_suffix(self, plugin_module, monkeypatch):
+        """The shared OLLAMA_BASE_URL is often the model provider's OpenAI-compat
+        base (``.../v1``). Native ``/api/*`` paths live at the origin, so the
+        suffix must be stripped -- otherwise the plugin 404s on any host
+        configured for chat completions."""
+        monkeypatch.setenv("OLLAMA_BASE_URL", "https://ollama.com/v1")
+        assert plugin_module._resolve_base_url() == "https://ollama.com"
+
+    def test_env_base_url_strips_redundant_api_suffix(self, plugin_module, monkeypatch):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "https://ollama.com/api/")
+        assert plugin_module._resolve_base_url() == "https://ollama.com"
+
+    def test_config_base_url_strips_openai_compat_suffix(self, plugin_module, monkeypatch):
+        from unittest.mock import patch
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        with patch.object(plugin_module, "_load_ollama_config", return_value={"base_url": "https://ollama.com/v1"}):
+            assert plugin_module._resolve_base_url() == "https://ollama.com"
+
+    def test_native_base_url_normalization_table(self, plugin_module):
+        """Pure-function table: idempotent on already-native values, never empty."""
+        for raw, want in (
+            ("https://ollama.com", "https://ollama.com"),
+            ("https://ollama.com/", "https://ollama.com"),
+            ("https://ollama.com/v1", "https://ollama.com"),
+            ("https://ollama.com/v1/", "https://ollama.com"),
+            ("https://ollama.com/api", "https://ollama.com"),
+            ("https://proxy.internal:11434/v1", "https://proxy.internal:11434"),
+            ("", "https://ollama.com"),
+        ):
+            assert plugin_module._native_base_url(raw) == want, raw
+
+    def test_endpoint_paths_are_native_not_v1(self, plugin_module):
+        """Guards the actual defect: endpoints must be /api/*, never /v1/api/*."""
+        assert plugin_module._SEARCH_ENDPOINT == "/api/web_search"
+        assert plugin_module._FETCH_ENDPOINT == "/api/web_fetch"
+        assert "/v1" not in plugin_module._SEARCH_ENDPOINT
+
     def test_default_timeout(self, plugin_module, monkeypatch):
         from unittest.mock import patch
         with patch.object(plugin_module, "_load_ollama_config", return_value={}):
